@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#18152c">
+  <title>🎵 ConciertoJuntos · Vistalegre</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <style>
+    *{box-sizing:border-box}html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#16132a;color:#fff}
+    button,input{font:inherit}button{cursor:pointer;border:0;border-radius:11px;padding:11px 13px;background:#7065ef;color:#fff;font-weight:700}button:disabled{opacity:.5;cursor:wait}
+    button.secondary{background:#34314f}button.danger{background:#ad345c}input{min-width:0;border:1px solid #55516e;background:#25213e;color:#fff;border-radius:11px;padding:12px;outline-offset:2px}
+    .app{height:100dvh;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom)}.top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 13px;background:#201b39}
+    .top h1{font-size:17px;margin:0}.small{font-size:12px;color:#d0cce8}.top .small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.map-wrap{position:relative;min-height:180px;height:49%;flex-shrink:0}
+    #mapa{height:100%;width:100%;z-index:1}.map-tools{position:absolute;right:10px;top:12px;z-index:500;display:flex;gap:6px;flex-direction:column}.map-tools button{font-size:13px;background:#fff;color:#201b39;box-shadow:0 2px 8px #0004}
+    .chat-section{min-height:0;flex:1;display:flex;flex-direction:column;background:#f7f6fc;color:#211d35}.chat-header{background:#e9e7fb;padding:9px 12px;display:flex;gap:8px;align-items:center;justify-content:space-between}
+    .chat-header strong{font-size:14px}.messages{min-height:0;flex:1;overflow:auto;padding:11px;display:flex;flex-direction:column;gap:8px}.message{max-width:88%;background:#fff;border-radius:13px;padding:9px 12px;box-shadow:0 1px 3px #0002;overflow-wrap:anywhere;align-self:flex-start}
+    .message.mine{background:#dedaff;align-self:flex-end}.message b{display:block;font-size:12px;color:#4e40c9}.message time{display:block;margin-top:4px;font-size:10px;color:#686279;text-align:right}.composer{display:flex;gap:8px;padding:9px;background:#fff}.composer input{flex:1;background:#f9f8fc;color:#211d35;border:1px solid #ccc9dd}.composer button{padding:10px 14px}
+    .shade{position:fixed;inset:0;background:#090714e8;z-index:2000;display:grid;place-items:center;padding:16px;overflow:auto}.dialog{width:min(100%,440px);background:#25213f;border:1px solid #48415e;border-radius:18px;padding:22px;box-shadow:0 12px 40px #0008}
+    .dialog h2{margin:0 0 8px}.dialog p{font-size:14px;color:#d2cee5;line-height:1.45}.dialog input{width:100%;margin:5px 0 12px}.dialog .actions{display:flex;gap:8px}.dialog .actions button{flex:1}.hidden{display:none!important}.error{color:#ffbec9!important;min-height:1.25em}.status{font-size:12px;color:#625d73;padding:3px 10px;background:#f7f6fc}.toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.toolbar button{padding:7px 9px;font-size:12px}.code{font-size:11px;color:#5e5774;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    @media(max-height:580px){.map-wrap{height:40%}.top{padding:7px}.dialog{padding:15px}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="top"><div><h1>🎵 ConciertoJuntos</h1><div id="salaTexto" class="small">Vistalegre · Sala sin conectar</div></div><button class="secondary" id="copiarSala" disabled>📋 Invitar</button></header>
+  <div class="map-wrap"><div id="mapa"></div><div class="map-tools"><button id="centrar">🏟️ Vistalegre</button><button id="miPosicion">📍 Mi posición</button></div></div>
+  <section class="chat-section">
+    <div class="chat-header"><strong>💬 Chat del grupo</strong><div class="toolbar"><span id="contador" class="code">Sin conexión</span><button id="compartir" class="secondary" disabled>📍 Compartir GPS</button></div></div>
+    <div class="status" id="estado" role="status" aria-live="polite">Configura Firebase y entra en una sala.</div>
+    <div id="chat" class="messages" aria-live="polite"></div>
+    <form class="composer" id="formMensaje"><input id="mensaje" maxlength="500" placeholder="Escribe un mensaje..." aria-label="Mensaje" disabled><button id="enviar" disabled>Enviar</button></form>
+  </section>
+</div>
+<div class="shade" id="acceso"><div class="dialog">
+  <h2>🎵 ConciertoJuntos</h2><p>🏟️ Palacio Vistalegre · Crea una sala o entra con el código que te dé un amigo. Nadie comparte su ubicación hasta que lo active.</p>
+  <label for="nombre">Tu nombre</label><input id="nombre" maxlength="30" autocomplete="nickname" placeholder="Ej.: Raúl">
+  <label for="codigo">Código de sala (solo para entrar en una existente)</label><input id="codigo" autocomplete="off" spellcheck="false" placeholder="Pega el código que te enviaron">
+  <div class="actions"><button id="crear" type="button">Crear sala</button><button id="unirse" class="secondary" type="button">Entrar con código</button></div>
+  <p id="errorAcceso" class="error" role="alert"></p><p class="small">El código es la llave de acceso: compártelo solamente con tus amigos.</p>
+</div></div>
+<script>
+'use strict';
+// 1) Sustituye estos datos por Configuración del proyecto > Tus aplicaciones (Firebase).
+const firebaseConfig = {
+  apiKey: 'PON_TU_API_KEY_AQUI',
+  authDomain: 'TU_PROYECTO.firebaseapp.com',
+  databaseURL: 'https://TU_PROYECTO-default-rtdb.europe-west1.firebasedatabase.app',
+  projectId: 'TU_PROYECTO',
+  appId: 'TU_APP_ID'
+};
+const VISTALEGRE = [40.3825, -3.7225];
+const $ = id => document.getElementById(id);
+let db, user, map, selfName = '', roomId = '', roomRef, gpsRef, watchId = null, sharing = false;
+let markers = new Map();
+const MAX_AGE_MS = 120000;
+function status(message){$('estado').textContent=message;}
+function error(message){$('errorAcceso').textContent=message;}
+function firebaseConfigured(){return firebaseConfig.apiKey !== 'PON_TU_API_KEY_AQUI' && !firebaseConfig.databaseURL.includes('TU_PROYECTO') && firebaseConfig.appId !== 'TU_APP_ID';}
+function randomRoomCode(){
+  if (!window.crypto || !crypto.getRandomValues) throw new Error('Se necesita HTTPS para generar un código seguro.');
+  const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
+  return Array.from(bytes, b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+function initMap(){
+  if(map)return;
+  map=L.map('mapa').setView(VISTALEGRE,16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+  L.marker(VISTALEGRE).addTo(map).bindPopup('🏟️ Palacio Vistalegre · Punto de encuentro');
+}
+async function authenticate(){
+  if(!firebaseConfigured()) throw new Error('Falta configurar firebaseConfig en index.html. Consulta el README.');
+  if(typeof firebase==='undefined'||typeof L==='undefined')throw new Error('No se han cargado las bibliotecas. Comprueba tu conexión.');
+  if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+  db=firebase.database();
+  user=firebase.auth().currentUser || (await firebase.auth().signInAnonymously()).user;
+}
+async function enter(create){
+  error('');
+  const name=$('nombre').value.trim();
+  if(name.length<2||name.length>30){error('Escribe un nombre de 2 a 30 caracteres.');return;}
+  const code=create?randomRoomCode():$('codigo').value.replace(/\s/g,'').toUpperCase();
+  if(!/^[A-F0-9]{32}$/.test(code)){error('El código de sala debe tener 32 caracteres hexadecimales.');return;}
+  $('crear').disabled=$('unirse').disabled=true;
+  try{
+    await authenticate();
+    const ref=db.ref('rooms/'+code+'/meta');
+    if(create){
+      // Los códigos son aleatorios (128 bits). No se sustituye una sala existente.
+      await ref.set({owner:user.uid,createdAt:firebase.database.ServerValue.TIMESTAMP});
+    }else{
+      const snapshot=await ref.once('value');
+      if(!snapshot.exists())throw new Error('No existe esa sala. Revisa el código.');
+    }
+    selfName=name;roomId=code;roomRef=db.ref('rooms/'+code);gpsRef=roomRef.child('locations/'+user.uid);
+    initMap();
+    $('acceso').classList.add('hidden');
+    $('salaTexto').textContent='Vistalegre · Sala '+code.slice(0,8)+'…';
+    $('copiarSala').disabled=false;$('compartir').disabled=false;$('mensaje').disabled=false;$('enviar').disabled=false;
+    status('Conectado. Tu ubicación está desactivada.');
+    listenMessages();listenLocations();
+  }catch(e){error(e.message||'No se pudo conectar. Comprueba Firebase y las reglas.');}
+  finally{$('crear').disabled=$('unirse').disabled=false;}
+}
+function listenMessages(){
+  roomRef.child('messages').limitToLast(100).on('child_added',snap=>{
+    const msg=snap.val();if(!msg||typeof msg.text!=='string')return;
+    const bubble=document.createElement('div');bubble.className='message'+(msg.uid===user.uid?' mine':'');
+    const who=document.createElement('b');who.textContent=typeof msg.name==='string'?msg.name:'Amigo';
+    const body=document.createElement('span');body.textContent=msg.text;
+    const when=document.createElement('time');when.textContent=typeof msg.at==='number'?new Date(msg.at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'';
+    bubble.append(who,body,when);$('chat').appendChild(bubble);
+    while($('chat').childElementCount>100)$('chat').firstElementChild.remove();
+    $('chat').scrollTop=$('chat').scrollHeight;
+  },e=>status('Error leyendo chat: '+e.message));
+}
+async function sendMessage(event){
+  event.preventDefault();if(!roomRef||!user)return;
+  const text=$('mensaje').value.trim();if(!text)return;
+  $('enviar').disabled=true;
+  try{
+    await roomRef.child('messages').push({uid:user.uid,name:selfName,text,at:firebase.database.ServerValue.TIMESTAMP});
+    $('mensaje').value='';
+  }catch(e){status('No se pudo enviar: '+e.message);}finally{$('enviar').disabled=false;}
+}
+function removeMarker(uid){const marker=markers.get(uid);if(marker){map.removeLayer(marker);markers.delete(uid);}}
+function refreshLocationMarkers(snapshot){
+  const positions=snapshot.val()||{};const now=Date.now();let active=0;
+  for(const [uid,p] of Object.entries(positions)){
+    if(!p||typeof p.lat!=='number'||typeof p.lng!=='number'||typeof p.updatedAt!=='number'||now-p.updatedAt>MAX_AGE_MS||p.updatedAt>now+60000){removeMarker(uid);continue;}
+    active++;
+    let marker=markers.get(uid);
+    if(!marker){marker=L.circleMarker([p.lat,p.lng],{radius:9,color:uid===user.uid?'#4f46e5':'#ea4b7a',weight:3,fillOpacity:.85}).addTo(map);markers.set(uid,marker);}
+    else marker.setLatLng([p.lat,p.lng]);
+    // Leaflet admite elementos DOM en el popup: evitamos inyectar HTML de usuario.
+    const popup=document.createElement('div');popup.textContent=(p.name||'Amigo')+(uid===user.uid?' (yo)':'');marker.bindPopup(popup);
+  }
+  for(const uid of [...markers.keys()])if(!positions[uid])removeMarker(uid);
+  $('contador').textContent=active+' compartiendo GPS';
+}
+let lastPositions=null;
+function listenLocations(){roomRef.child('locations').on('value',snap=>{lastPositions=snap;refreshLocationMarkers(snap);},e=>status('Error en ubicaciones: '+e.message));setInterval(()=>{if(lastPositions)refreshLocationMarkers(lastPositions);},15000);}
+async function enableGps(){
+  if(!navigator.geolocation){status('Este navegador no admite GPS.');return;}
+  if(!window.isSecureContext){status('El GPS requiere HTTPS. Publica la página en GitHub Pages.');return;}
+  if(sharing)return;
+  try{
+    // Se programa la limpieza antes de publicar una posición.
+    await gpsRef.onDisconnect().remove();
+    sharing=true;$('compartir').textContent='⛔ Detener GPS';$('compartir').className='danger';
+    status('Buscando señal GPS...');
+    watchId=navigator.geolocation.watchPosition(async position=>{
+      if(!sharing)return;
+      try{
+        await gpsRef.set({lat:position.coords.latitude,lng:position.coords.longitude,name:selfName,updatedAt:firebase.database.ServerValue.TIMESTAMP});
+        if(sharing)status('Compartiendo posición · Precisión aproximada ±'+Math.round(position.coords.accuracy)+' m');
+      }catch(e){status('No se pudo actualizar GPS: '+e.message);}
+    },e=>{status('GPS: '+e.message+' (revisa el permiso de ubicación).');disableGps();},
+    {enableHighAccuracy:true,maximumAge:5000,timeout:15000});
+  }catch(e){status('No se pudo iniciar GPS: '+e.message);}
+}
+async function disableGps(){
+  sharing=false;
+  if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+  $('compartir').textContent='📍 Compartir GPS';$('compartir').className='secondary';
+  if(gpsRef){try{await gpsRef.remove();await gpsRef.onDisconnect().cancel();status('Has dejado de compartir tu posición.');}catch(e){status('No se pudo confirmar el borrado de ubicación: '+e.message);}}
+}
+$('crear').addEventListener('click',()=>enter(true));
+$('unirse').addEventListener('click',()=>enter(false));
+$('formMensaje').addEventListener('submit',sendMessage);
+$('compartir').addEventListener('click',()=>sharing?disableGps():enableGps());
+$('centrar').addEventListener('click',()=>{if(map)map.setView(VISTALEGRE,17);});
+$('miPosicion').addEventListener('click',()=>{if(!map)return;const p=markers.get(user?.uid);if(p)map.setView(p.getLatLng(),18);else status('Activa «Compartir GPS» para mostrar tu posición.');});
+$('copiarSala').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(roomId);status('Código copiado. Envíalo solo a tus amigos.');}catch(e){status('Código de sala: '+roomId);}});
+</script>
+</body>
+</html>
